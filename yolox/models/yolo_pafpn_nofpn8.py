@@ -84,7 +84,7 @@ class YOLOPAFPNNFPN8(nn.Module):
 
         self.buconv1 = BaseConv(int(in_channels[1]* width), int(in_channels[2]* width), 3, stride=2, act=act)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2)
-        
+        self.conv2 = BaseConv(1,1,1)
 
     def forward(self, input):
         """
