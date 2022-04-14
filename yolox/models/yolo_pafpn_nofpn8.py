@@ -9,7 +9,7 @@ from .darknet import CSPDarknet
 from .network_blocks import BaseConv, CSPLayer, DWConv
 
 
-class YOLOPAFPNNOFPN7(nn.Module):
+class YOLOPAFPNNFPN8(nn.Module):
     """
     YOLOv3 model. Darknet 53 is the default backbone of this model.
     """
@@ -35,7 +35,7 @@ class YOLOPAFPNNOFPN7(nn.Module):
             int(in_channels[2] * width), int(in_channels[1] * width), 1, 1, act=act
         )
         self.C3_p4 = CSPLayer(
-            int(3 * in_channels[1] * width),
+            int(2 * in_channels[1] * width),
             int(in_channels[1] * width),
             round(3 * depth),
             False,
@@ -47,7 +47,7 @@ class YOLOPAFPNNOFPN7(nn.Module):
             int(in_channels[2] * width), int(in_channels[0] * width), 1, 1, act=act
         )
         self.C3_p3 = CSPLayer(
-            int(3 * in_channels[0] * width),
+            int(in_channels[0] * width),
             int(in_channels[0] * width),
             round(3 * depth),
             False,
@@ -58,7 +58,7 @@ class YOLOPAFPNNOFPN7(nn.Module):
         # bottom-up conv
 
         self.C3_n4 = CSPLayer(
-            int(3 * in_channels[2] * width),
+            int(2 * in_channels[2] * width),
             int(in_channels[2] * width),
             round(3 * depth),
             False,
@@ -83,15 +83,9 @@ class YOLOPAFPNNOFPN7(nn.Module):
         #     nn.PixelShuffle(upscale_factor3))
 
         self.buconv1 = BaseConv(int(in_channels[1]* width), int(in_channels[2]* width), 3, stride=2, act=act)
-        
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2)
-        self.buconv2 = BaseConv(int(in_channels[1]* width), int(in_channels[2]* width), 3, stride=2, act=act)
+        
 
-        self.buconv3 = BaseConv(int(in_channels[0]* width), int(in_channels[1]* width), 3, stride=2, act=act)
-    
-        self.reduce_conv2 =  BaseConv(
-            int(in_channels[1] * width), int(in_channels[0] * width), 1, 1, act=act
-        ) 
     def forward(self, input):
         """
         Args:
@@ -106,24 +100,21 @@ class YOLOPAFPNNOFPN7(nn.Module):
         features = [out_features[f] for f in self.in_features]
         [x2, x1, x0] = features
 
-        f_out2_1 = self.buconv3(x2)
         fpn_out0 = self.lateral_conv0(x0)  # 1024->512/32
-        f_out0_1 = self.upsample(fpn_out0)
-        f_out1 = torch.cat([f_out2_1, x1, f_out0_1], 1)  # 512->1024/16
-        pan_out1 = self.C3_p4(f_out1)  # 1024->512/16
+        #f_out0 = self.sub_pixel0(fpn_out0)  # 512/16
+        f_out0 = self.upsample(fpn_out0)
+        f_out0 = torch.cat([f_out0, x1], 1)  # 512->1024/16
+        pan_out1 = self.C3_p4(f_out0)  # 1024->512/16
 
-        fpn_out1 = self.reduce_conv1(x0)  # 1024->256/16
-        f_out0_2 = self.upsample2(fpn_out1)
-        fpn_out2 = self.reduce_conv2(x1)
-        f_out1_2 = self.upsample(fpn_out2)
-        f_out1 = torch.cat([x2, f_out1_2, f_out0_2], 1)  # 256->512/8
-        pan_out2 = self.C3_p3(f_out1)  # 512->256/8
+        # fpn_out1 = self.reduce_conv1(x0)  # 1024->256/16
+        # #f_out1 = self.sub_pixel1(fpn_out1)  # 256/8
+        # f_out1 = self.upsample2(fpn_out1)
+        # f_out1 = torch.cat([f_out1, x2], 1)  # 256->512/8
+        pan_out2 = self.C3_p3(x2)  # 512->256/8
 
-
-        f_out2_0 = self.maxpool(x2)
-        f_out2_0 = self.buconv2(f_out2_0)
-        f_out1_0 = self.buconv1(x1)
-        f_out3 = torch.cat([f_out2_0, f_out1_0, x0], 1)
+        #f_out3 = self.maxpool(x2)
+        f_out3 = self.buconv1(x1)
+        f_out3 = torch.cat([f_out3, x0], 1)
         pan_out0 = self.C3_n4(f_out3)  # 1024->1024/32
 
         outputs = (pan_out2, pan_out1, pan_out0)
