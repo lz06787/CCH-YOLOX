@@ -2,11 +2,9 @@
 # -*- coding:utf-8 -*-
 # Copyright (c) Megvii, Inc. and its affiliates.
 
-import collections
 import datetime
 import os
 import time
-from turtle import update
 from loguru import logger
 
 import torch
@@ -14,7 +12,6 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import copy
-import csv
 from yolox.data import DataPrefetcher
 from yolox.utils import (
     MeterBuffer,
@@ -50,7 +47,6 @@ class Trainer:
         self.local_rank = get_local_rank()
         self.device = "cuda:{}".format(self.local_rank)
         self.use_model_ema = exp.ema
-        self.save_history_ckpt = exp.save_history_ckpt
 
         # data/dataloader related attr
         self.data_type = torch.float16 if args.fp16 else torch.float32
@@ -60,7 +56,7 @@ class Trainer:
         # metric record
         self.meter = MeterBuffer(window_size=exp.print_interval)
         self.file_name = os.path.join(exp.output_dir, args.experiment_name)
-        self.csv_path = os.path.join(exp.output_dir, args.experiment_name, "output.csv")
+
         if self.rank == 0:
             os.makedirs(self.file_name, exist_ok=True)
 
@@ -90,8 +86,18 @@ class Trainer:
         for self.iter in tqdm(range(self.max_iter)):
             self.before_iter()
             self.train_one_iter()
-            self.after_iter()
-
+            progress_str, gpu_mem_usage, time_str, loss_str, meter_lr, input_size_0, eta_str = self.after_iter()
+            self.meter.clear_meters()
+        logger.info(
+            "{}, mem: {:.0f}Mb, {}, {}, lr: {:.3e}".format(
+                progress_str,
+                gpu_mem_usage,
+                time_str,
+                loss_str,
+                meter_lr,
+            )
+            + (", size: {:d}, {}".format(input_size_0, eta_str))
+        )
 
     def train_one_iter(self):
         iter_start_time = time.time()
@@ -135,11 +141,10 @@ class Trainer:
         # model related init
         torch.cuda.set_device(self.local_rank)
         model = self.exp.get_model()
-        model.to(self.device)
         logger.info(
             "Model Summary: {}".format(get_model_info(model, self.exp.test_size))
         )
-        
+        model.to(self.device)
 
         # solver related init
         self.optimizer = self.exp.get_optimizer(self.args.batch_size)
@@ -181,21 +186,12 @@ class Trainer:
         )
         # Tensorboard logger
         if self.rank == 0:
-            self.tblogger = SummaryWriter(os.path.join(self.file_name, "tensorboard"))
-
-        # 创建csv文件记录训练结果
-        with open(self.csv_path, "a", newline="") as f:
-            csv_header = ["epoch", "map50", "map50_95"]
-            csv_file = csv.writer(f)
-            csv_file.writerow(csv_header)
+            self.tblogger = SummaryWriter(self.file_name)
 
         logger.info("Training start...")
-        #logger.info("\n{}".format(model))
+        logger.info("\n{}".format(model))
 
     def after_train(self):
-        # 关闭csv文件
-        self.file.close()
-        
         logger.info(
             "Training of experiment is done and the best AP is {:.2f}".format(self.best_ap * 100)
         )
@@ -212,7 +208,6 @@ class Trainer:
             else:
                 self.model.head.use_l1 = True
             self.exp.eval_interval = 1
-            #self.exp.eval_interval = 3
             if not self.no_aug:
                 self.save_ckpt(ckpt_name="last_mosaic_epoch")
 
@@ -234,8 +229,7 @@ class Trainer:
         """
         # log needed information
         #if (self.iter + 1) % self.exp.print_interval == 0:
-        #if True:
-        if (self.iter + 1) % self.max_iter == 0:
+        if True:
             # TODO check ETA logic
             left_iters = self.max_iter * self.max_epoch - (self.progress_in_iter + 1)
             eta_seconds = self.meter["iter_time"].global_avg * left_iters
@@ -254,26 +248,26 @@ class Trainer:
                 ["{}: {:.3f}s".format(k, v.avg) for k, v in time_meter.items()]
             )
 
-            logger.info(
-                "{}, mem: {:.0f}Mb, {}, {}, lr: {:.3e}".format(
-                    progress_str,
-                    gpu_mem_usage(),
-                    time_str,
-                    loss_str,
-                    self.meter["lr"].latest,
-                )
-                + (", size: {:d}, {}".format(self.input_size[0], eta_str))
-            )
-            self.meter.clear_meters()
+            # logger.info(
+            #     "{}, mem: {:.0f}Mb, {}, {}, lr: {:.3e}".format(
+            #         progress_str,
+            #         gpu_mem_usage(),
+            #         time_str,
+            #         loss_str,
+            #         self.meter["lr"].latest,
+            #     )
+            #     + (", size: {:d}, {}".format(self.input_size[0], eta_str))
+            # )
+            #self.meter.clear_meters()
 
-
+            input_size_0 = copy.copy(self.input_size[0])
         
         # random resizing
         if (self.progress_in_iter + 1) % 10 == 0:
             self.input_size = self.exp.random_resize(
                 self.train_loader, self.epoch, self.rank, self.is_distributed
             )
-        #return progress_str, gpu_mem_usage(), time_str, loss_str, self.meter["lr"].latest, input_size_0, eta_str
+        return progress_str, gpu_mem_usage(), time_str, loss_str, self.meter["lr"].latest, input_size_0, eta_str
     @property
     def progress_in_iter(self):
         return self.epoch * self.max_iter + self.iter
@@ -290,7 +284,6 @@ class Trainer:
             # resume the model/optimizer state dict
             model.load_state_dict(ckpt["model"])
             self.optimizer.load_state_dict(ckpt["optimizer"])
-            self.best_ap = ckpt.pop("best_ap", 0)
             # resume the training states variables
             start_epoch = (
                 self.args.start_epoch - 1
@@ -309,20 +302,6 @@ class Trainer:
                 ckpt_file = self.args.ckpt
                 ckpt = torch.load(ckpt_file, map_location=self.device)["model"]
                 model = load_ckpt(model, ckpt)
-                
-            if self.args.convnext_ckpt:
-                logger.info('loading backbone ckpt for fine tuning')
-                convnext_ckpt_file = self.args.convnext_ckpt
-                #convnext_ckpt = torch.load(convnext_ckpt_file, map_location=self.device)["model"]
-                #convnext_ckpt = torch.load(convnext_ckpt_file, map_location=self.device)
-                van_ckpt = torch.load(convnext_ckpt_file, map_location=self.device)["state_dict"]
-                #convnext_ckpt2 = collections.OrderedDict()
-                van_ckpt2 = collections.OrderedDict()
-                for key in van_ckpt.keys():
-                    #convnext_ckpt2['backbone.backbone.'+key] = convnext_ckpt[key]
-                    #convnext_ckpt2['backbone.'+key] = convnext_ckpt[key]
-                    van_ckpt2['backbone.backbone.'+key] = van_ckpt[key]
-                model = load_ckpt(model, van_ckpt2)
             self.start_epoch = 0
 
         return model
@@ -338,25 +317,15 @@ class Trainer:
         ap50_95, ap50, summary = self.exp.eval(
             evalmodel, self.evaluator, self.is_distributed
         )
-        update_best_ckpt = ap50_95 > self.best_ap
-        self.best_ap = max(self.best_ap, ap50_95)
-
         self.model.train()
         if self.rank == 0:
             self.tblogger.add_scalar("val/COCOAP50", ap50, self.epoch + 1)
             self.tblogger.add_scalar("val/COCOAP50_95", ap50_95, self.epoch + 1)
             logger.info("\n" + summary)
         synchronize()
-        
-        # 在csv文件中记录epoch ，ap50， ap50_95
-        with open(self.csv_path, "a", newline="") as f:
-            csv_file = csv.writer(f)
-            row = [self.epoch, ap50, ap50_95]
-            csv_file.writerow(row)
 
-        self.save_ckpt("last_epoch", update_best_ckpt)
-        if self.save_history_ckpt:
-            self.save_ckpt(f"epoch_{self.epoch + 1}")
+        self.save_ckpt("last_epoch", ap50_95, ap50_95 > self.best_ap)
+        self.best_ap = max(self.best_ap, ap50_95)
 
     def save_ckpt(self, ckpt_name, ap50_95=0, update_best_ckpt=False):
         if self.rank == 0:
@@ -366,15 +335,12 @@ class Trainer:
                 "start_epoch": self.epoch + 1,
                 "model": save_model.state_dict(),
                 "optimizer": self.optimizer.state_dict(),
-                "best_ap": self.best_ap,
             }
-
             save_checkpoint(
                 ckpt_state,
                 update_best_ckpt,
                 self.file_name,
+                ap50_95,
                 ckpt_name,
-                ap50_95=ap50_95,
-                epoch = self.epoch,
-                save_best_in_name=False, #如果是true，则会将map值存到名字里，会保留很多权重
+                self.epoch
             )

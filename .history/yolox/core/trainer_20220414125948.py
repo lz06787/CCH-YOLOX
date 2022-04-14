@@ -186,8 +186,8 @@ class Trainer:
         # 创建csv文件记录训练结果
         with open(self.csv_path, "a", newline="") as f:
             csv_header = ["epoch", "map50", "map50_95"]
-            csv_file = csv.writer(f)
-            csv_file.writerow(csv_header)
+            self.csv_file = csv.writer(f)
+            self.csv_file.writerow(csv_header)
 
         logger.info("Training start...")
         #logger.info("\n{}".format(model))
@@ -349,10 +349,8 @@ class Trainer:
         synchronize()
         
         # 在csv文件中记录epoch ，ap50， ap50_95
-        with open(self.csv_path, "a", newline="") as f:
-            csv_file = csv.writer(f)
-            row = [self.epoch, ap50, ap50_95]
-            csv_file.writerow(row)
+        row = [self.epoch, ap50, ap50_95]
+        self.csv_file.writerow(row)
 
         self.save_ckpt("last_epoch", update_best_ckpt)
         if self.save_history_ckpt:

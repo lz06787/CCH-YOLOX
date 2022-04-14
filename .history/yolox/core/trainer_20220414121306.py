@@ -60,7 +60,7 @@ class Trainer:
         # metric record
         self.meter = MeterBuffer(window_size=exp.print_interval)
         self.file_name = os.path.join(exp.output_dir, args.experiment_name)
-        self.csv_path = os.path.join(exp.output_dir, args.experiment_name, "output.csv")
+        self.csv_path = os.path.join(exp.output_dir, "output.csv")
         if self.rank == 0:
             os.makedirs(self.file_name, exist_ok=True)
 
@@ -184,10 +184,10 @@ class Trainer:
             self.tblogger = SummaryWriter(os.path.join(self.file_name, "tensorboard"))
 
         # 创建csv文件记录训练结果
-        with open(self.csv_path, "a", newline="") as f:
-            csv_header = ["epoch", "map50", "map50_95"]
-            csv_file = csv.writer(f)
-            csv_file.writerow(csv_header)
+        self.file = open(self.csv_path, "w", newline="")
+        csv_header = ["epoch", "map50", "map50_95"]
+        self.csv_file = csv.writer(self.file)
+        self.csv_file.writerow(csv_header)
 
         logger.info("Training start...")
         #logger.info("\n{}".format(model))
@@ -349,10 +349,8 @@ class Trainer:
         synchronize()
         
         # 在csv文件中记录epoch ，ap50， ap50_95
-        with open(self.csv_path, "a", newline="") as f:
-            csv_file = csv.writer(f)
-            row = [self.epoch, ap50, ap50_95]
-            csv_file.writerow(row)
+        row = [self.epoch, ap50, ap50_95]
+        self.csv_file.writerow(row)
 
         self.save_ckpt("last_epoch", update_best_ckpt)
         if self.save_history_ckpt:
@@ -369,12 +367,14 @@ class Trainer:
                 "best_ap": self.best_ap,
             }
 
+            
+
             save_checkpoint(
                 ckpt_state,
                 update_best_ckpt,
                 self.file_name,
+                ap50_95,
                 ckpt_name,
-                ap50_95=ap50_95,
-                epoch = self.epoch,
+                self.epoch
                 save_best_in_name=False, #如果是true，则会将map值存到名字里，会保留很多权重
             )

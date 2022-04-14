@@ -350,9 +350,9 @@ class Trainer:
         
         # 在csv文件中记录epoch ，ap50， ap50_95
         with open(self.csv_path, "a", newline="") as f:
-            csv_file = csv.writer(f)
+            
             row = [self.epoch, ap50, ap50_95]
-            csv_file.writerow(row)
+            self.csv_file.writerow(row)
 
         self.save_ckpt("last_epoch", update_best_ckpt)
         if self.save_history_ckpt:
