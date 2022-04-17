@@ -121,7 +121,7 @@ class Exp(BaseExp):
         from yolox.models.yolo_pafpn_van import YOLOPAFPN_VAN
         from yolox.models.yolo_pafpn_dwconv import YOLOPAFPN_DWCONV
         from yolox.models.yolo_pafpn_ACmix import YOLOPAFPN_ACMIX
-        from yolox.models.yolo_nofpn11_wsa import YOLONOFPN11_WSA
+        from yolox.models.yolo_2_nofpn112 import YOLO2NOFPN112
 
         def init_yolo(M):
             for m in M.modules():
@@ -130,11 +130,11 @@ class Exp(BaseExp):
                     m.momentum = 0.03
 
         if getattr(self, "model", None) is None:
-            in_channels = [256, 512, 1024, 128]
+            in_channels = [128, 256, 512, 1024]
             #in_channels = [128, 256, 512, 1024]
             
-            backbone = YOLONOFPN11_WSA(self.depth, self.width, in_channels=in_channels, act=self.act)
-            head = YOLOXHead(self.num_classes, self.width, in_channels=in_channels, act=self.act)
+            backbone = YOLO2NOFPN112(self.depth, self.width, in_channels=in_channels, act=self.act)
+            head = YOLOXHead2(self.num_classes, self.width, in_channels=in_channels, act=self.act)
             self.model = YOLOX(backbone, head)
 
         self.model.apply(init_yolo)
