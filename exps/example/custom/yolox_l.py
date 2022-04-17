@@ -9,7 +9,7 @@ from yolox.exp import Exp as MyExp
 class Exp(MyExp):
     def __init__(self):
         super(Exp, self).__init__()
-        self.num_classes = 10
+        self.num_classes = 4
         self.depth = 0.33
         self.width = 0.5
         self.warmup_epochs = 5
@@ -29,7 +29,7 @@ class Exp(MyExp):
         # You can uncomment this line to specify a multiscale range
         # self.random_size = (14, 26)
         self.data_dir = '../datasets/coco'
-        self.train_ann = "instances_trainval.json"
+        self.train_ann = "instances_test.json"
         self.val_ann = "instances_test.json"
         self.test_ann = "instances_test.json"
         # ---------- transform config ------------ #
@@ -39,6 +39,6 @@ class Exp(MyExp):
         self.flip_prob = 0.5
 
         # --------------  training config --------------------- #
-        self.no_aug_epochs = 50
+        self.no_aug_epochs = 150
         # -----------------  testing config ------------------ #
         self.test_size = (640, 640)
