@@ -9,6 +9,8 @@ import torch
 import torch.distributed as dist
 import torch.nn as nn
 
+from yolox.models.yolo_head2_count import YOLOXHead2COUNT
+
 from .base_exp import BaseExp
 
 
@@ -121,7 +123,9 @@ class Exp(BaseExp):
         from yolox.models.yolo_pafpn_van import YOLOPAFPN_VAN
         from yolox.models.yolo_pafpn_dwconv import YOLOPAFPN_DWCONV
         from yolox.models.yolo_pafpn_ACmix import YOLOPAFPN_ACMIX
-        from yolox.models.yolo_2_nofpn112 import YOLO2NOFPN112
+        from yolox.models.yolo_2_nofpn14 import YOLO2NOFPN14
+        from yolox.models.yolo_head2_snip2 import YOLOXHead2SNIP2
+        from yolox.models.yolo_head2_count import YOLOXHead2COUNT
 
         def init_yolo(M):
             for m in M.modules():
@@ -133,7 +137,7 @@ class Exp(BaseExp):
             in_channels = [128, 256, 512, 1024]
             #in_channels = [128, 256, 512, 1024]
             
-            backbone = YOLO2NOFPN112(self.depth, self.width, in_channels=in_channels, act=self.act)
+            backbone = YOLO2NOFPN14(self.depth, self.width, in_channels=in_channels, act=self.act)
             head = YOLOXHead2(self.num_classes, self.width, in_channels=in_channels, act=self.act)
             self.model = YOLOX(backbone, head)
 

@@ -1,23 +1,28 @@
-
-
-
-import torch
 import torch.nn as nn
 
-class SpatialAttentionWSA(nn.Module):
-    def __init__(self,kernel_size=7):
+
+class ChannelAttentionPSA(nn.Module):
+    def __init__(self,channel, reduction=16):
         super().__init__()
-        self.conv=nn.Conv2d(2,1,kernel_size=kernel_size,padding=kernel_size//2)
+        self.maxpool=nn.AdaptiveMaxPool2d(1)
+        self.avgpool=nn.AdaptiveAvgPool2d(1)
+        self.se=nn.Sequential(
+            nn.Conv2d(channel,channel//reduction,1,bias=False),
+            nn.ReLU(),
+            nn.Conv2d(channel//reduction,channel,1,bias=False)
+        )
         self.sigmoid=nn.Sigmoid()
+    
     def forward(self, x) :
-        x1 = window_partition(x, window_num=4)
-        max_result,_=torch.max(x1,dim=1,keepdim=True)
-        avg_result=torch.mean(x1,dim=1,keepdim=True)
-        result=torch.cat([max_result,avg_result],1)
-        output=self.conv(result)
-        output=self.sigmoid(output)
-        output=window_reverse(output, window_num=4, H=x.shape[2], W=x.shape[3])
-        return output*x
+        x1 = window_partition(x, window_size=4)
+        max_result=self.maxpool(x1)
+        avg_result=self.avgpool(x1)
+        max_out=self.se(max_result)
+        avg_out=self.se(avg_result)
+        output=self.sigmoid(max_out+avg_out)
+        x1 = output * x1
+        x2 = window_reverse(x1, window_size=4, H=x.shape[2], W=x.shape[3]) 
+        return x2
 
 
 def window_partition(x, window_num: int):
@@ -31,7 +36,6 @@ def window_partition(x, window_num: int):
         windows: (num_windows*B, window_size, window_size, C)
     """
     B, C, H, W = x.shape
-    window_num = window_num
     window_size = H // window_num
     x = x.view(B, C, window_num, window_size, window_num, window_size)
     # permute: [B, H//Mh, Mh, W//Mw, Mw, C] -> [B, H//Mh, W//Mh, Mw, Mw, C]
@@ -53,7 +57,6 @@ def window_reverse(windows, window_num: int, H: int, W: int):
     Returns:
         x: (B, H, W, C)
     """
-    window_num = window_num
     window_size = H // window_num
     C = windows.shape[1]
     B = int(windows.shape[0] / (H * W / window_size / window_size))

@@ -8,7 +8,7 @@ import torch.nn as nn
 from .network_blocks import BaseConv, CSPLayer, DWConv
 from .four_detect.darknet2 import CSPDarknet2
 
-class YOLO2NOFPN112(nn.Module):
+class YOLO2NOFPN113(nn.Module):
     """
     YOLOv3 model. Darknet 53 is the default backbone of this model.
     """
@@ -52,7 +52,7 @@ class YOLO2NOFPN112(nn.Module):
         )
 
         self.C3_p3 = CSPLayer(
-            int(2 * in_channels[1] * width),
+            int(3 * in_channels[1] * width),
             int(in_channels[1] * width),
             round(3 * depth),
             False,
@@ -83,7 +83,7 @@ class YOLO2NOFPN112(nn.Module):
 
         self.buconv1 = BaseConv(int(in_channels[2]* width), int(in_channels[3]* width), 3, stride=2, act=act)
         self.buconv2 = BaseConv(int(in_channels[1]* width), int(in_channels[2]* width), 3, stride=2, act=act)
-    
+        self. buconv3 = BaseConv(int(in_channels[0]* width), int(in_channels[1]* width), 3, stride=2, act=act)
     def forward(self, input):
         """
         Args:
@@ -103,11 +103,13 @@ class YOLO2NOFPN112(nn.Module):
         f_out4 = torch.cat([f_out4, x3], 1)
         pan_out3 = self.C3_p5(f_out4)
 
+        fpn_out4 = self.buconv3(x3)
         fpn_out1 = self.reduce_conv1(x0)  # 1024->256/16
         #f_out1 = self.sub_pixel1(fpn_out1)  # 256/8
         f_out1 = self.upsample2(fpn_out1)
-        f_out1 = torch.cat([f_out1, x2], 1)  # 256->512/8
-        pan_out2 = self.C3_p3(f_out1)  # 512->256/8
+        f_out1 = torch.cat([f_out1, x2, fpn_out4], 1)  # 256->512/8
+        pan_out2 = self.C3_p3(f_out1)  # 512->256/8        
+
 
         fpn_out2 = self.buconv2(x2)
         fpn_out0 = self.lateral_conv0(x0)  # 1024->512/32
@@ -115,6 +117,7 @@ class YOLO2NOFPN112(nn.Module):
         f_out0 = self.upsample(fpn_out0)
         f_out0 = torch.cat([f_out0, x1, fpn_out2], 1)  # 512->1024/16
         pan_out1 = self.C3_p4(f_out0)  # 1024->512/16
+
 
         #f_out3 = self.maxpool(x2)
         f_out3 = self.buconv1(x1)
