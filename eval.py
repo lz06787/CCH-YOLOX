@@ -49,7 +49,7 @@ def make_parser():
         type=str,
         help="pls input your expriment description file",
     )
-    parser.add_argument("-c", "--ckpt", default='pretrain_weights/best_ckpt.pth', type=str, help="ckpt for eval")
+    parser.add_argument("-c", "--ckpt", default='..pretrain_weights/yolox_s.pth', type=str, help="ckpt for eval")
     parser.add_argument("--conf", default=0.001, type=float, help="test conf")
     parser.add_argument("--nms", default=None, type=float, help="test nms threshold")
     parser.add_argument("--tsize", default=None, type=int, help="test img size")

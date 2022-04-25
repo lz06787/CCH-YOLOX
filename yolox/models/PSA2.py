@@ -1,8 +1,8 @@
 import torch.nn as nn
 
 
-class ChannelAttentionPSA(nn.Module):
-    def __init__(self,channel, reduction=16):
+class ChannelAttentionPSA2(nn.Module):
+    def __init__(self,channel, reduction=16, window_num=2):
         super().__init__()
         self.maxpool=nn.AdaptiveMaxPool2d(1)
         self.avgpool=nn.AdaptiveAvgPool2d(1)
@@ -12,16 +12,16 @@ class ChannelAttentionPSA(nn.Module):
             nn.Conv2d(channel//reduction,channel,1,bias=False)
         )
         self.sigmoid=nn.Sigmoid()
-    
+        self.window_num=window_num
     def forward(self, x) :
-        x1 = window_partition(x, window_size=4)
+        x1 = window_partition(x, window_num=self.window_num)
         max_result=self.maxpool(x1)
         avg_result=self.avgpool(x1)
         max_out=self.se(max_result)
         avg_out=self.se(avg_result)
         output=self.sigmoid(max_out+avg_out)
         x1 = output * x1
-        x2 = window_reverse(x1, window_size=4, H=x.shape[2], W=x.shape[3]) 
+        x2 = window_reverse(x1, window_num=self.window_num, H=x.shape[2], W=x.shape[3]) 
         return x2
 
 

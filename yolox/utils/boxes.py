@@ -10,6 +10,7 @@ from yolox.utils.confluence import confluence
 from yolox.utils.ensemble_boxes import *
 from yolox.utils.confluence import *
 from yolox.utils.soft_nms import *
+from yolox.utils.set_nms import set_cpu_nms
 __all__ = [
     "filter_box",
     "postprocess",
@@ -82,7 +83,7 @@ def filter_box(output, scale_range):
     return output[keep]
 
 
-def postprocess(prediction, num_classes, conf_thre=0.7, nms_thre=0.45, class_agnostic=False, img_size = 640, WBF=False, soft_nms=False):
+def postprocess(prediction, num_classes, conf_thre=0.7, nms_thre=0.45, class_agnostic=False, img_size = 640, WBF=False, soft_nms=False, set_nms=True):
     box_corner = prediction.new(prediction.shape)
     box_corner[:, :, 0] = prediction[:, :, 0] - prediction[:, :, 2] / 2
     box_corner[:, :, 1] = prediction[:, :, 1] - prediction[:, :, 3] / 2
@@ -123,7 +124,9 @@ def postprocess(prediction, num_classes, conf_thre=0.7, nms_thre=0.45, class_agn
 
             detections0 = torch.cat((boxes,scores),1)
             detections = torch.cat((detections0,labels),1).cuda()
-        
+        elif set_nms:
+            keep = set_cpu_nms(detections, 0.5)
+            detections = detections[keep]
         elif soft_nms: # map下降还很慢
             out_index = soft_nms_pytorch(detections[:, :4], detections[:, 4] * detections[:, 5],)
             detections = torch.index_select(detections, 0, out_index)
@@ -132,7 +135,7 @@ def postprocess(prediction, num_classes, conf_thre=0.7, nms_thre=0.45, class_agn
                 nms_out_index = torchvision.ops.nms(
                     detections[:, :4],
                     detections[:, 4] * detections[:, 5],
-                    rere,
+        
                 )
             else:
                 nms_out_index = torchvision.ops.batched_nms(

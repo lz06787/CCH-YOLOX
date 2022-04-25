@@ -126,7 +126,8 @@ class Exp(BaseExp):
         from yolox.models.yolo_2_nofpn14 import YOLO2NOFPN14
         from yolox.models.yolo_head2_snip2 import YOLOXHead2SNIP2
         from yolox.models.yolo_head2_count import YOLOXHead2COUNT
-
+        from yolox.models.yolo_nofpn20 import YOLONOFPN20
+        from yolox.models.aspp_nofpn.yolox_aspp_nofpn import YOLOASPPNOFPN
         def init_yolo(M):
             for m in M.modules():
                 if isinstance(m, nn.BatchNorm2d):
@@ -134,11 +135,11 @@ class Exp(BaseExp):
                     m.momentum = 0.03
 
         if getattr(self, "model", None) is None:
-            in_channels = [128, 256, 512, 1024]
-            #in_channels = [128, 256, 512, 1024]
+            #in_channels = [256, 512, 1024]
+            in_channels = [256, 512, 1024]
             
-            backbone = YOLO2NOFPN14(self.depth, self.width, in_channels=in_channels, act=self.act)
-            head = YOLOXHead2(self.num_classes, self.width, in_channels=in_channels, act=self.act)
+            backbone = YOLONOFPN20(self.depth, self.width, in_channels=in_channels, act=self.act)
+            head = YOLOXHead(self.num_classes, self.width, in_channels=in_channels, act=self.act)
             self.model = YOLOX(backbone, head)
 
         self.model.apply(init_yolo)

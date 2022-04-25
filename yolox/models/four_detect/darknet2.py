@@ -4,7 +4,7 @@
 
 from torch import nn
 
-from .network_blocks2 import BaseConv, CSPLayer, DWConv, Focus, ResLayer, SPPBottleneck
+from ..network_blocks import BaseConv, CSPLayer, DWConv, Focus, ResLayer, SPPBottleneck
 
 
 
