@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 # Copyright (c) 2014-2021 Megvii Inc. All rights reserved.
 
+import imp
 import os
 import random
 
@@ -126,8 +127,11 @@ class Exp(BaseExp):
         from yolox.models.yolo_2_nofpn14 import YOLO2NOFPN14
         from yolox.models.yolo_head2_snip2 import YOLOXHead2SNIP2
         from yolox.models.yolo_head2_count import YOLOXHead2COUNT
-        from yolox.models.yolo_nofpn20 import YOLONOFPN20
-        from yolox.models.aspp_nofpn.yolox_aspp_nofpn import YOLOASPPNOFPN
+        from yolox.models.yolo_nofpn21 import YOLONOFPN21
+        from yolox.models.yolo_nofpn_FAM2 import YOLONOFPN_FAM2
+        from yolox.models.yolo_head_likefocs import YOLOXHead_likefocs
+        from yolox.models.lzhead.yolo_head_lzhead3 import YOLOXHead_LZHEAD3
+        from yolox.models.lzhead.yolo_nofpn_LZHEAD import YOLONOFPN_LZHEAD
         def init_yolo(M):
             for m in M.modules():
                 if isinstance(m, nn.BatchNorm2d):
@@ -138,8 +142,8 @@ class Exp(BaseExp):
             #in_channels = [256, 512, 1024]
             in_channels = [256, 512, 1024]
             
-            backbone = YOLONOFPN20(self.depth, self.width, in_channels=in_channels, act=self.act)
-            head = YOLOXHead(self.num_classes, self.width, in_channels=in_channels, act=self.act)
+            backbone = YOLONOFPN_LZHEAD(self.depth, self.width, in_channels=in_channels, act=self.act)
+            head = YOLOXHead_LZHEAD3(self.num_classes, self.width, in_channels=in_channels, act=self.act)
             self.model = YOLOX(backbone, head)
 
         self.model.apply(init_yolo)
