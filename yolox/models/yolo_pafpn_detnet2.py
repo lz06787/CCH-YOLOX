@@ -5,7 +5,7 @@
 import torch
 import torch.nn as nn
 
-from .detnet.darknet import CSPDarknet_DETNET
+from .detnet.darknet_det2 import CSPDarknet_DET2
 from .detnet.network_blocks import BaseConv, CSPLayer, DWConv
 
 
@@ -18,13 +18,13 @@ class YOLOPAFPN_DETNET(nn.Module):
         self,
         depth=1.0,
         width=1.0,
-        in_features=("dark4", "dark5", "dark6"),
+        in_features=("dark3", "dark4", "dark5"),
         in_channels=[256, 512, 1024],
         depthwise=False,
         act="silu",
     ):
         super().__init__()
-        self.backbone = CSPDarknet_DETNET(depth, width, depthwise=depthwise, act=act)
+        self.backbone = CSPDarknet_DET2(depth, width, depthwise=depthwise, act=act)
         self.in_features = in_features
         self.in_channels = in_channels
         Conv = DWConv if depthwise else BaseConv

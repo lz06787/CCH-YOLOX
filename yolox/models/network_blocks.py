@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 import warnings
 from .WPSA.WPSA2 import WPSABlock2
-
+import torch.nn.functional as F
 
 
 class SiLU(nn.Module):
@@ -202,6 +202,90 @@ class CSPLayer(nn.Module):
         x_2 = self.conv2(x)
         x_1 = self.m(x_1)
         x = torch.cat((x_1, x_2), dim=1)
+        return self.conv3(x)
+
+
+
+class CSPLayer_LZ(nn.Module):
+    """C3 in yolov5, CSP Bottleneck with 3 convolutions"""
+
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        n=3,
+        shortcut=True,
+        expansion=0.5,
+        depthwise=False,
+        act="silu",
+    ):
+        """
+        Args:
+            in_channels (int): input channels.
+            out_channels (int): output channels.
+            n (int): number of Bottlenecks. Default value: 1.
+        """
+        # ch_in, ch_out, number, shortcut, groups, expansion
+        super().__init__()
+        hidden_channels = int(out_channels * expansion)  # hidden channels
+        self.conv1 = BaseConv(in_channels, hidden_channels, 1, stride=1, act=act)
+        self.conv2 = BaseConv(in_channels, hidden_channels, 1, stride=1, act=act)
+        self.conv3 = BaseConv(2 * hidden_channels, out_channels, 1, stride=1, act=act)
+        module_list = [
+            Bottleneck(
+                hidden_channels, hidden_channels, shortcut, 1.0, depthwise, act=act
+            )
+            for _ in range(n)
+        ]
+        self.m = nn.Sequential(*module_list)
+        
+        self.weight_level_0 = (                
+            BaseConv(
+                in_channels=hidden_channels,
+                out_channels=32,
+                ksize=1,
+                stride=1,
+                act=act,
+            ))
+
+        self.weight_level_1 = (                
+            BaseConv(
+                in_channels=hidden_channels,
+                out_channels=32,
+                ksize=1,
+                stride=1,
+                act=act,
+            ))
+
+        self.weight_level_2 = (                
+            BaseConv(
+                in_channels=hidden_channels,
+                out_channels=32,
+                ksize=1,
+                stride=1,
+                act=act,
+            ))
+
+        self.weight_levels = (nn.Conv2d(32*3, 3, kernel_size=1, stride=1, padding=0))
+
+    def forward(self, x):
+        x_1 = self.conv1(x)
+        x_2 = self.conv2(x)
+        x_10 = self.m[0](x_1)
+        x_11 = self.m[1](x_10)
+        x_12 = self.m[2](x_11)
+        level_0_weight = self.weight_level_0(x_10)
+        level_1_weight = self.weight_level_1(x_11)
+        level_2_weight = self.weight_level_2(x_12)
+        levels_weight = torch.cat((level_0_weight, level_1_weight, level_2_weight),1)
+        levels_weight = self.weight_levels(levels_weight)
+        levels_weight = F.softmax(levels_weight, dim=1)
+
+        x_1 = x_10 * levels_weight[:,0:1,:,:]+\
+                            x_11 * levels_weight[:,1:2,:,:]+\
+                            x_12 * levels_weight[:,2:,:,:] 
+        x = torch.cat((x_1, x_2), dim=1)
+
         return self.conv3(x)
 
 

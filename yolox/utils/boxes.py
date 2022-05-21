@@ -3,14 +3,10 @@
 # Copyright (c) 2014-2021 Megvii Inc. All rights reserved.
 
 import numpy as np
-import torch.nn.functional as F
+
 import torch
 import torchvision
-from yolox.utils.confluence import confluence
-from yolox.utils.ensemble_boxes import *
-from yolox.utils.confluence import *
-from yolox.utils.soft_nms import *
-from yolox.utils.set_nms import set_cpu_nms
+import torch.nn.functional as F
 __all__ = [
     "filter_box",
     "postprocess",
@@ -71,7 +67,6 @@ def bboxes_iou_batch(bboxes_a, bboxes_b, xyxy=True):
     union = area_a + area_b - inter + 1e-9
     return inter / union  # [N, A, B]
 
-    
 def filter_box(output, scale_range):
     """
     output: (N, 5+class) shape
@@ -83,7 +78,7 @@ def filter_box(output, scale_range):
     return output[keep]
 
 
-def postprocess(prediction, num_classes, conf_thre=0.7, nms_thre=0.45, class_agnostic=False, img_size = 640, WBF=False, soft_nms=False, set_nms=True):
+def postprocess(prediction, num_classes, conf_thre=0.7, nms_thre=0.45, class_agnostic=False):
     box_corner = prediction.new(prediction.shape)
     box_corner[:, :, 0] = prediction[:, :, 0] - prediction[:, :, 2] / 2
     box_corner[:, :, 1] = prediction[:, :, 1] - prediction[:, :, 3] / 2
@@ -92,10 +87,6 @@ def postprocess(prediction, num_classes, conf_thre=0.7, nms_thre=0.45, class_agn
     prediction[:, :, :4] = box_corner[:, :, :4]
 
     output = [None for _ in range(len(prediction))]
-
-    boxes_list = []
-    scores_list = []
-    labels_list = []
     for i, image_pred in enumerate(prediction):
 
         # If none are remaining => process next image
@@ -112,41 +103,21 @@ def postprocess(prediction, num_classes, conf_thre=0.7, nms_thre=0.45, class_agn
             continue
         
 
-        if WBF: # map下降
-            boxes_list = [[[a0/img_size, a1/img_size, a2/img_size, a3/img_size] for a0,a1,a2,a3 in detections[:, :4] ]]
-            scores_list = [[b for b in detections[:, 4] * detections[:, 5] ]]
-            labels_list = [[int(c) for c in detections[:, 6]]]
-            
-            boxes, scores, labels = weighted_boxes_fusion(boxes_list, scores_list, labels_list, weights=None, iou_thr=0.45, skip_box_thr=0.01)
-            boxes = torch.tensor([[a0*img_size, a1*img_size, a2*img_size, a3*img_size] for a0,a1,a2,a3 in boxes ])
-            scores = torch.tensor([[a] for a in scores])
-            labels = torch.tensor([[a] for a in labels])
-
-            detections0 = torch.cat((boxes,scores),1)
-            detections = torch.cat((detections0,labels),1).cuda()
-        elif set_nms:
-            keep = set_cpu_nms(detections, 0.5)
-            detections = detections[keep]
-        elif soft_nms: # map下降还很慢
-            out_index = soft_nms_pytorch(detections[:, :4], detections[:, 4] * detections[:, 5],)
-            detections = torch.index_select(detections, 0, out_index)
+        if class_agnostic:
+            nms_out_index = torchvision.ops.nms(
+                detections[:, :4],
+                detections[:, 4] * detections[:, 5],
+                nms_thre,
+            )
         else:
-            if class_agnostic:
-                nms_out_index = torchvision.ops.nms(
-                    detections[:, :4],
-                    detections[:, 4] * detections[:, 5],
-        
-                )
-            else:
-                nms_out_index = torchvision.ops.batched_nms(
-                    detections[:, :4],
-                    detections[:, 4] * detections[:, 5],
-                    detections[:, 6],
-                    nms_thre,
-                )
+            nms_out_index = torchvision.ops.batched_nms(
+                detections[:, :4],
+                detections[:, 4] * detections[:, 5],
+                detections[:, 6],
+                nms_thre,
+            )
 
-            detections = detections[nms_out_index]
-        
+        detections = detections[nms_out_index]
         if output[i] is None:
             output[i] = detections
         else:
@@ -155,7 +126,7 @@ def postprocess(prediction, num_classes, conf_thre=0.7, nms_thre=0.45, class_agn
     return output
 
 
-def bboxes_iou(bboxes_a, bboxes_b, xyxy=True):
+def bboxes_iou(bboxes_a, bboxes_b, xyxy=True, mode = 'iou'):
     if bboxes_a.shape[1] != 4 or bboxes_b.shape[1] != 4:
         raise IndexError
 
@@ -178,7 +149,16 @@ def bboxes_iou(bboxes_a, bboxes_b, xyxy=True):
         area_b = torch.prod(bboxes_b[:, 2:], 1)
     en = (tl < br).type(tl.type()).prod(dim=2)
     area_i = torch.prod(br - tl, 2) * en  # * ((tl < br).all())
-    return area_i / (area_a[:, None] + area_b - area_i)
+    if mode == 'iof':
+        union = area_a[:, None]
+    else:
+        union = area_a[:, None] + area_b - area_i
+    
+    eps = 1e-6
+    eps = union.new_tensor([eps])
+    union = torch.max(union, eps)
+    ious = area_i / union
+    return ious
 
 
 def matrix_iou(a, b):

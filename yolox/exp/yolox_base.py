@@ -9,6 +9,7 @@ import random
 import torch
 import torch.distributed as dist
 import torch.nn as nn
+from yolox.models import yolo_pafpn
 
 from yolox.models.yolo_head2_count import YOLOXHead2COUNT
 
@@ -130,8 +131,11 @@ class Exp(BaseExp):
         from yolox.models.yolo_nofpn21 import YOLONOFPN21
         from yolox.models.yolo_nofpn_FAM2 import YOLONOFPN_FAM2
         from yolox.models.yolo_head_likefocs import YOLOXHead_likefocs
-        from yolox.models.lzhead.yolo_head_lzhead3 import YOLOXHead_LZHEAD3
-        from yolox.models.lzhead.yolo_nofpn_LZHEAD import YOLONOFPN_LZHEAD
+        from yolox.models.lzhead.yolo_head_lzhead4 import YOLOXHead_LZHEAD4
+        from yolox.models.cascade_head.yolo_head_cascade4_3H import YOLOXHead_CASCADE4_3H
+        from yolox.models.nofpn2.yolo_nofpn6 import YOLONOFPN6
+        from yolox.models.cspdeeper.yolo_pafpn_deep import YOLOPAFPN_DEEP
+        from yolox.models.cascade_head.yolo_head_cascade6 import YOLOXHead_CASCADE6
         def init_yolo(M):
             for m in M.modules():
                 if isinstance(m, nn.BatchNorm2d):
@@ -142,8 +146,8 @@ class Exp(BaseExp):
             #in_channels = [256, 512, 1024]
             in_channels = [256, 512, 1024]
             
-            backbone = YOLONOFPN_LZHEAD(self.depth, self.width, in_channels=in_channels, act=self.act)
-            head = YOLOXHead_LZHEAD3(self.num_classes, self.width, in_channels=in_channels, act=self.act)
+            backbone = YOLOPAFPN(self.depth, self.width, in_channels=in_channels, act=self.act)
+            head = YOLOXHead_CASCADE6(self.num_classes, self.width, in_channels=in_channels, act=self.act)
             self.model = YOLOX(backbone, head)
 
         self.model.apply(init_yolo)

@@ -19,7 +19,6 @@ from yolox.models.ghm_loss import GHMC
 # from yolox.models.varifocal_loss import VarifocalLoss
 from .cbam import EffectiveSELayer
 from torchvision.ops import DeformConv2d
-
 class YOLOXHead_LZHEAD3(nn.Module):
     def __init__(
         self,
@@ -82,8 +81,7 @@ class YOLOXHead_LZHEAD3(nn.Module):
             self.reg_offset_conv1.append(nn.Conv2d(int(256 * width) * 3, int(256 * width) // 4, 1))
             self.reg_offset_conv2.append(nn.Conv2d(int(256 * width) // 4, 18, 3, padding=1))
             self.deform.append(DeformConv2d(4, 4, kernel_size=3, stride=1, padding=1))
-
-            # self.cls_downsample.append(BaseConv(
+            
             #     int(256 * width) * 3,
             #     int(256 * width),
             #     ksize=1,

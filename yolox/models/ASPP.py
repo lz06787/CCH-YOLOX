@@ -1,11 +1,8 @@
 import torch
 import numpy as np
 import torch.nn as nn
-
-from copy import deepcopy
-import fvcore.nn.weight_init as weight_init
 from torch.nn import functional as F
-from .Group_Normalization import GroupNorm
+# from .Group_Normalization import GroupNorm
 
 def get_activation(name="silu", inplace=True):
     if name == "silu":
@@ -18,34 +15,34 @@ def get_activation(name="silu", inplace=True):
         raise AttributeError("Unsupported act type: {}".format(name))
     return module
 
-class DilateConv(nn.Module):
-    """A Conv2d -> Batchnorm -> silu/leaky relu block"""
+# class DilateConv(nn.Module):
+#     """A Conv2d -> Batchnorm -> silu/leaky relu block"""
 
-    def __init__(
-        self, in_channels, out_channels, ksize, stride, groups=1, bias=False, act="silu", dilation=2
-    ):
-        super().__init__()
-        # same padding
-        pad = (ksize - 1) // 2 + dilation - 1
-        self.conv = nn.Conv2d(
-            in_channels,
-            out_channels,
-            kernel_size=ksize,
-            stride=stride,
-            padding=pad,
-            groups=groups,
-            bias=bias,
-            dilation=dilation
-        )
-        #self.bn = nn.BatchNorm2d(out_channels)
-        self.bn = GroupNorm(out_channels, num_groups=32)
-        self.act = get_activation(act, inplace=True)
+#     def __init__(
+#         self, in_channels, out_channels, ksize, stride, groups=1, bias=False, act="silu", dilation=2
+#     ):
+#         super().__init__()
+#         # same padding
+#         pad = (ksize - 1) // 2 + dilation - 1
+#         self.conv = nn.Conv2d(
+#             in_channels,
+#             out_channels,
+#             kernel_size=ksize,
+#             stride=stride,
+#             padding=pad,
+#             groups=groups,
+#             bias=bias,
+#             dilation=dilation
+#         )
+#         #self.bn = nn.BatchNorm2d(out_channels)
+#         self.bn = GroupNorm(out_channels, num_groups=32)
+#         self.act = get_activation(act, inplace=True)
 
-    def forward(self, x):
-        return self.act(self.bn(self.conv(x)))
+#     def forward(self, x):
+#         return self.act(self.bn(self.conv(x)))
 
-    def fuseforward(self, x):
-        return self.act(self.conv(x))
+#     def fuseforward(self, x):
+#         return self.act(self.conv(x))
 
 
 def conv3x3(in_channels, out_channels, stride=1, dilation=1):
@@ -163,12 +160,12 @@ class ASPP2(nn.Module):
                 bias=True)
             self.aspp.append(conv)
         self.gap = nn.AdaptiveAvgPool2d(1)
-        self.init_weights()
+    #     self.init_weights()
 
-    def init_weights(self):
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                kaiming_init(m)
+    # def init_weights(self):
+    #     for m in self.modules():
+    #         if isinstance(m, nn.Conv2d):
+    #             kaiming_init(m)
 
     def forward(self, x):
         avg_x = self.gap(x)
@@ -180,7 +177,7 @@ class ASPP2(nn.Module):
         out = torch.cat(out, dim=1)
         return out
 
-
+'''
 class ASPP3(nn.Module):
     """
     Atrous Spatial Pyramid Pooling (ASPP).
@@ -293,3 +290,4 @@ class ASPP3(nn.Module):
         res = self.project(res)
         res = F.dropout(res, self.dropout, training=self.training) if self.dropout > 0 else res
         return res
+'''
