@@ -136,9 +136,9 @@ class Trainer:
         torch.cuda.set_device(self.local_rank)
         model = self.exp.get_model()
         model.to(self.device)
-        logger.info(
-            "Model Summary: {}".format(get_model_info(model, self.exp.test_size))
-        )
+        # logger.info(
+        #     "Model Summary: {}".format(get_model_info(model, self.exp.test_size))
+        # )
         
 
         # solver related init
@@ -352,7 +352,7 @@ class Trainer:
             row = [int(self.epoch)+1, ap50, ap50_95]
             csv_file.writerow(row)
 
-        self.save_ckpt("last_epoch", update_best_ckpt=update_best_ckpt)
+        self.save_ckpt("last_epoch",ap50_95=ap50_95, update_best_ckpt=update_best_ckpt)
         if self.save_history_ckpt:
             self.save_ckpt(f"epoch_{self.epoch + 1}")
 
@@ -374,5 +374,5 @@ class Trainer:
                 ckpt_name,
                 ap50_95,
                 epoch = self.epoch,
-                save_best_in_name=False, #如果是true，则会将map值存到名字里，会保留很多权重
+                save_best_in_name=True, #如果是true，则会将map值存到名字里，会保留很多权重
             )

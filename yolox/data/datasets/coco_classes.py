@@ -85,5 +85,7 @@
 #     "toothbrush",
 # )
 
-
-COCO_CLASSES = ('pedestrian', 'people', 'bicycle', 'car', 'van', 'truck', 'tricycle', 'awning-tricycle', 'bus', 'motor')
+#COCO_CLASSES = ('car', 'truck', 'van', 'bus')
+#COCO_CLASSES = ('car', 'bus', 'van', 'others')
+#COCO_CLASSES = ('pedestrian', 'people', 'bicycle', 'car', 'van', 'truck', 'tricycle', 'awning-tricycle', 'bus', 'motor')
+COCO_CLASSES = ('car',"van","truck","bus",'feright_car')

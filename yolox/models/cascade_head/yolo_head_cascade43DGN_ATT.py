@@ -11,10 +11,24 @@ import torch.nn.functional as F
 
 from yolox.utils import bboxes_iou
 
-from .losses import IOUloss
-from .network_blocks import BaseConv, DWConv
+from ..losses import IOUloss
+from ..network_blocks import BaseConv, DWConv
+from torchvision.ops import DeformConv2d
+from ..DYATT.AFT_DCN import AFT_DCN
+class Conv3x3Norm(torch.nn.Module):
+    def __init__(self, in_channels, out_channels, stride):
+        super(Conv3x3Norm, self).__init__()
 
-class YOLOXHead(nn.Module):
+        self.conv = DeformConv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1)
+        self.bn = nn.GroupNorm(num_groups=16, num_channels=out_channels)
+
+    def forward(self, input, offset):
+        x = self.conv(input.contiguous(), offset)
+        x = self.bn(x)
+        return x
+
+
+class YOLOXHead_CASCADE43DGN_ATT(nn.Module):
     def __init__(
         self,
         num_classes,
@@ -31,7 +45,7 @@ class YOLOXHead(nn.Module):
         """
         super().__init__()
 
-
+        self.dyhead = AFT_DCN(in_channels=int(256 * width))
         self.n_anchors = 1
         self.num_classes = num_classes
         self.decode_in_inference = True  # for deploy, set to False
@@ -41,10 +55,24 @@ class YOLOXHead(nn.Module):
         self.cls_preds = nn.ModuleList()
         self.reg_preds = nn.ModuleList()
         self.obj_preds = nn.ModuleList()
+
+        self.cls2_preds = nn.ModuleList()
+        self.reg2_preds = nn.ModuleList()
+        self.obj2_preds = nn.ModuleList()
+
         self.stems = nn.ModuleList()
+
+        self.reg_offset_conv = nn.ModuleList()
+        self.deform = nn.ModuleList()
+
+
         Conv = DWConv if depthwise else BaseConv
 
         for i in range(len(in_channels)):
+
+            self.reg_offset_conv.append(nn.Conv2d(int(256 * width)+4, 18, 3, padding=1))
+            self.deform.append(Conv3x3Norm(int(256 * width), int(256 * width), stride=1))
+
             self.stems.append(
                 BaseConv(
                     in_channels=int(in_channels[i] * width),
@@ -122,8 +150,37 @@ class YOLOXHead(nn.Module):
                 )
             )
 
+            self.cls2_preds.append(
+                nn.Conv2d(
+                    in_channels=int(256 * width),
+                    out_channels=self.n_anchors * self.num_classes,
+                    kernel_size=1,
+                    stride=1,
+                    padding=0,
+                )
+            )
+            self.reg2_preds.append(
+                nn.Conv2d(
+                    in_channels=int(256 * width),
+                    out_channels=4,
+                    kernel_size=1,
+                    stride=1,
+                    padding=0,
+                )
+            )
+            self.obj2_preds.append(
+                nn.Conv2d(
+                    in_channels=int(256 * width),
+                    out_channels=self.n_anchors * 1,
+                    kernel_size=1,
+                    stride=1,
+                    padding=0,
+                )
+            )
+
         self.use_l1 = False
         self.l1_loss = nn.L1Loss(reduction="none")
+        #self.l1_loss = nn.SmoothL1Loss(reduction="none")
         self.bcewithlog_loss = nn.BCEWithLogitsLoss(reduction="none")
         self.iou_loss = IOUloss(reduction="none")
         self.strides = strides
@@ -152,36 +209,67 @@ class YOLOXHead(nn.Module):
 
     def forward(self, xin, labels=None, imgs=None):
         outputs = []
+        outputs2 = []
         origin_preds = []
+        origin_preds2 = []
         x_shifts = []
         y_shifts = []
+        anchorx_shifts = []
+        anchory_shifts = []
+        anchorw_shifts = []
+        anchorh_shifts = []
         expanded_strides = []
+
+        x2 = self.stems[0](xin[0])
+        x1 = self.stems[1](xin[1])
+        x0 = self.stems[2](xin[2])
+        #xin = [x2,x1,x0]
+        x = {}
+        x["x2"] = x2
+        x["x1"] = x1
+        x["x0"] = x0
+        dyhead_out = self.dyhead(x)
+        xin = [dyhead_out["x2"], dyhead_out["x1"], dyhead_out["x0"]]
 
         for k, (cls_conv, reg_conv, stride_this_level, x) in enumerate(
             zip(self.cls_convs, self.reg_convs, self.strides, xin)
         ):
-            x = self.stems[k](x)
+            #x = self.stems[k](x)
             cls_x = x
             reg_x = x
 
             cls_feat = cls_conv(cls_x)
-            # 通道数为4 (bs,4,w,h)
             cls_output = self.cls_preds[k](cls_feat)
 
             reg_feat = reg_conv(reg_x)
-            # 通道数为4 (bs,4,w,h)
             reg_output = self.reg_preds[k](reg_feat)
-            # 通道数为1 (bs,1,w,h)
             obj_output = self.obj_preds[k](reg_feat)
 
+            reg_feat_pre = torch.cat((reg_feat, reg_output), 1)
+
+            reg_offset = self.reg_offset_conv[k](reg_feat_pre)
+            reg_feat2 = self.deform[k](reg_feat.contiguous(), reg_offset)
+
+            cls_output2 = self.cls2_preds[k](cls_feat)
+            reg_output2 = self.reg2_preds[k](reg_feat2)
+            obj_output2 = self.obj2_preds[k](reg_feat2)
+
             if self.training:
-                # output通道数为4+4+1=9 (bs,9,w,h)
-                output = torch.cat([reg_output, obj_output, cls_output], 1)
-                output, grid = self.get_output_and_grid(
-                    output, k, stride_this_level, xin[0].type()
+                output0 = torch.cat([reg_output, obj_output, cls_output], 1)
+                output2 = torch.cat([reg_output2, obj_output2, cls_output2], 1)
+
+                output, grid, output2, anchor_xy, anchor_wh = self.get_output_and_grid(
+                    output0, output2, k, stride_this_level, xin[0].type()
                 )
+
                 x_shifts.append(grid[:, :, 0])
                 y_shifts.append(grid[:, :, 1])
+                anchorx_shifts.append(anchor_xy[:, :, 0])
+                anchory_shifts.append(anchor_xy[:, :, 1])
+
+                anchorw_shifts.append(anchor_wh[:, :, 0])
+                anchorh_shifts.append(anchor_wh[:, :, 1])                
+                
                 expanded_strides.append(
                     torch.zeros(1, grid.shape[1])
                     .fill_(stride_this_level)
@@ -198,41 +286,79 @@ class YOLOXHead(nn.Module):
                     )
                     origin_preds.append(reg_output.clone())
 
+
+                    batch_size2 = reg_output2.shape[0]
+                    hsize2, wsize2 = reg_output2.shape[-2:]
+                    reg_output2 = reg_output2.view(
+                        batch_size2, self.n_anchors, 4, hsize2, wsize2
+                    )
+                    reg_output2 = reg_output2.permute(0, 1, 3, 4, 2).reshape(
+                        batch_size2, -1, 4
+                    )
+                    origin_preds2.append(reg_output2.clone())
+            
+            
             else:
                 output = torch.cat(
                     [reg_output, obj_output.sigmoid(), cls_output.sigmoid()], 1
                 )
 
+                output2 = torch.cat(
+                    [reg_output2, obj_output2.sigmoid(), cls_output2.sigmoid()], 1
+                )
+
             outputs.append(output)
+            outputs2.append(output2)
 
         if self.training:
-            return self.get_losses(
-                imgs,
-                x_shifts,
-                y_shifts,
-                expanded_strides,
-                labels,
-                torch.cat(outputs, 1),
-                origin_preds,
-                dtype=xin[0].dtype,
-            )
+
+            loss, loss_reg, loss_obj, loss_cls, loss_l1, num_fgxx = self.get_losses(                
+                                                                            imgs,
+                                                                            x_shifts,
+                                                                            y_shifts,
+                                                                            expanded_strides,
+                                                                            labels,
+                                                                            torch.cat(outputs, 1),
+                                                                            origin_preds,
+                                                                            dtype=xin[0].dtype,
+                                                                            anchorw_shifts=anchorw_shifts,
+                                                                            anchorh_shifts=anchorh_shifts,)
+
+            loss2, loss_reg2, loss_obj2, loss_cls2, loss_l12, num_fgxx2 = self.get_losses(                
+                                                                            imgs,
+                                                                            x_shifts,
+                                                                            y_shifts,
+                                                                            expanded_strides,
+                                                                            labels,
+                                                                            torch.cat(outputs2, 1),
+                                                                            origin_preds2,
+                                                                            dtype=xin[0].dtype,
+                                                                            anchorw_shifts=anchorw_shifts,
+                                                                            anchorh_shifts=anchorh_shifts,
+                                                                            time=1)
+
+            total_loss = loss_reg+loss_reg2+loss_obj+loss_obj2+loss_cls2+loss_l1+loss_l12
+            return total_loss, loss_reg2, loss_obj2, loss_cls2, loss_l12, num_fgxx2
+
         else:
             self.hw = [x.shape[-2:] for x in outputs]
             # [batch, n_anchors_all, 85]
             outputs = torch.cat(
                 [x.flatten(start_dim=2) for x in outputs], dim=2
             ).permute(0, 2, 1)
-            if self.decode_in_inference:
-                return self.decode_outputs(outputs, dtype=xin[0].type())
+
+            outputs2 = torch.cat(
+                [x.flatten(start_dim=2) for x in outputs2], dim=2
+            ).permute(0, 2, 1)
+
+            if self.decode_in_inference: 
+                outputs,outputs2 =  self.decode_outputs(outputs, outputs2, dtype=xin[0].type())
+                return outputs2
             else:
-                return outputs
-    '''
-    output: (bs,9,w,h)
-    k = 0,1,2
-    stride: 图像缩小的倍数 8,16,32
-    dtype: torch.cuda.HalfTensor
-    '''
-    def get_output_and_grid(self, output, k, stride, dtype):
+                return outputs2
+
+
+    def get_output_and_grid(self, output, output2, k, stride, dtype):
         grid = self.grids[k]
 
         batch_size = output.shape[0]
@@ -248,11 +374,26 @@ class YOLOXHead(nn.Module):
             batch_size, self.n_anchors * hsize * wsize, -1
         )
         grid = grid.view(1, -1, 2)
+
+        anchor_xy = (output[..., :2] + grid)
+        anchor_wh = torch.exp(output[..., 2:4])
+
         output[..., :2] = (output[..., :2] + grid) * stride
         output[..., 2:4] = torch.exp(output[..., 2:4]) * stride
-        return output, grid
+        
+        output2 = output2.view(batch_size, self.n_anchors, n_ch, hsize, wsize)
+        output2 = output2.permute(0, 1, 3, 4, 2).reshape(
+            batch_size, self.n_anchors * hsize * wsize, -1
+        )
+        #grid = grid.view(1, -1, 2)
+        output2[..., :2] = (output2[..., :2] + anchor_xy) * stride
+        output2[..., 2:4] = anchor_wh * torch.exp(output2[..., 2:4]) * stride       
 
-    def decode_outputs(self, outputs, dtype):
+        return output, grid, output2, anchor_xy, anchor_wh
+
+
+
+    def decode_outputs(self, outputs, outputs2, dtype):
         grids = []
         strides = []
         for (hsize, wsize), stride in zip(self.hw, self.strides):
@@ -265,9 +406,15 @@ class YOLOXHead(nn.Module):
         grids = torch.cat(grids, dim=1).type(dtype)
         strides = torch.cat(strides, dim=1).type(dtype)
 
+        anchor_xy = outputs[..., :2] + grids
+        anchor_wh = torch.exp(outputs[..., 2:4])
+
         outputs[..., :2] = (outputs[..., :2] + grids) * strides
         outputs[..., 2:4] = torch.exp(outputs[..., 2:4]) * strides
-        return outputs
+
+        outputs2[..., :2] = (outputs2[..., :2] + anchor_xy) * strides
+        outputs2[..., 2:4] = anchor_wh * torch.exp(outputs2[..., 2:4]) * strides
+        return outputs, outputs2
 
     def get_losses(
         self,
@@ -279,6 +426,9 @@ class YOLOXHead(nn.Module):
         outputs,
         origin_preds,
         dtype,
+        anchorw_shifts,
+        anchorh_shifts,
+        time=0
     ):
         bbox_preds = outputs[:, :, :4]  # [batch, n_anchors_all, 4]
         obj_preds = outputs[:, :, 4].unsqueeze(-1)  # [batch, n_anchors_all, 1]
@@ -290,6 +440,9 @@ class YOLOXHead(nn.Module):
         total_num_anchors = outputs.shape[1]
         x_shifts = torch.cat(x_shifts, 1)  # [1, n_anchors_all]
         y_shifts = torch.cat(y_shifts, 1)  # [1, n_anchors_all]
+        anchorw_shifts = torch.cat(anchorw_shifts, 1)  # [1, n_anchors_all]
+        anchorh_shifts = torch.cat(anchorh_shifts, 1)  # [1, n_anchors_all]
+
         expanded_strides = torch.cat(expanded_strides, 1)
         if self.use_l1:
             origin_preds = torch.cat(origin_preds, 1)
@@ -386,13 +539,16 @@ class YOLOXHead(nn.Module):
                 obj_target = fg_mask.unsqueeze(-1)
                 reg_target = gt_bboxes_per_image[matched_gt_inds]
                 if self.use_l1:
-                    l1_target = self.get_l1_target(
-                        outputs.new_zeros((num_fg_img, 4)),
-                        gt_bboxes_per_image[matched_gt_inds],
-                        expanded_strides[0][fg_mask],
-                        x_shifts=x_shifts[0][fg_mask],
-                        y_shifts=y_shifts[0][fg_mask],
-                    )
+                    if time==1:
+                        l1_target = reg_target
+                    else:
+                        l1_target = self.get_l1_target(
+                            outputs.new_zeros((num_fg_img, 4)),
+                            gt_bboxes_per_image[matched_gt_inds],
+                            expanded_strides[0][fg_mask],
+                            x_shifts=x_shifts[0][fg_mask],
+                            y_shifts=y_shifts[0][fg_mask],
+                        )
 
             cls_targets.append(cls_target)
             reg_targets.append(reg_target)
@@ -409,49 +565,34 @@ class YOLOXHead(nn.Module):
             l1_targets = torch.cat(l1_targets, 0)
 
         num_fg = max(num_fg, 1)
-        
-        #================================================#
         loss_iou = (
             self.iou_loss(bbox_preds.view(-1, 4)[fg_masks], reg_targets)
         ).sum() / num_fg
-        #================================================#
-
-
-        #================================================#
         loss_obj = (
             self.bcewithlog_loss(obj_preds.view(-1, 1), obj_targets)
         ).sum() / num_fg
-        
-        #loss_obj = (self.GHM_LOSS(obj_preds.view(-1, 1), obj_targets))
-        
-        #loss_obj = (self.focal_loss_discrite(obj_preds.sigmoid().view(-1, 1), obj_targets)).sum() / num_fg
-        
-        #loss_obj = (self.Varifocal_loss(obj_preds.view(-1, 1), obj_targets)).sum() / num_fg
-        #================================================#
 
 
-        #================================================#
-        #loss_cls = (self.GHM_LOSS(cls_preds.view(-1, self.num_classes)[fg_masks], cls_targets))
         loss_cls = (
             self.bcewithlog_loss(
                 cls_preds.view(-1, self.num_classes)[fg_masks], cls_targets
             )
         ).sum() / num_fg
-        #================================================#
 
 
-        #================================================#
         if self.use_l1:
-            loss_l1 = (
-                self.l1_loss(origin_preds.view(-1, 4)[fg_masks], l1_targets)
-            ).sum() / num_fg
-
-            #loss_l1 = (self.BALANCE_L1_LOSS(origin_preds.view(-1, 4)[fg_masks], l1_targets)).sum() / num_fg
+            if time == 1:
+                loss_l1 = (
+                    self.l1_loss(bbox_preds.view(-1, 4)[fg_masks], l1_targets)
+                ).sum() / num_fg
+            else:
+                loss_l1 = (
+                    self.l1_loss(origin_preds.view(-1, 4)[fg_masks], l1_targets)
+                ).sum() / num_fg
         else:
             loss_l1 = 0.0
 
-        #================================================#
-        
+
         reg_weight = 5.0
         loss = reg_weight * loss_iou + loss_obj + loss_cls + loss_l1
 
@@ -469,6 +610,13 @@ class YOLOXHead(nn.Module):
         l1_target[:, 1] = gt[:, 1] / stride - y_shifts
         l1_target[:, 2] = torch.log(gt[:, 2] / stride + eps)
         l1_target[:, 3] = torch.log(gt[:, 3] / stride + eps)
+        return l1_target
+
+    def get_l1_target2(self, l1_target, gt, stride, x_shifts, y_shifts, anchorw_shifts, anchorh_shifts, eps=1e-8):
+        l1_target[:, 0] = gt[:, 0] / stride - x_shifts
+        l1_target[:, 1] = gt[:, 1] / stride - y_shifts
+        l1_target[:, 2] = torch.log(gt[:, 2] / anchorw_shifts / stride + eps)
+        l1_target[:, 3] = torch.log(gt[:, 3] / anchorh_shifts / stride + eps)
         return l1_target
 
     @torch.no_grad()

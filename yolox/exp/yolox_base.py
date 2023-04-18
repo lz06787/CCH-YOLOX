@@ -9,9 +9,6 @@ import random
 import torch
 import torch.distributed as dist
 import torch.nn as nn
-from yolox.models import yolo_pafpn
-
-from yolox.models.yolo_head2_count import YOLOXHead2COUNT
 
 from .base_exp import BaseExp
 
@@ -22,7 +19,7 @@ class Exp(BaseExp):
 
 
         # detect classes number of model
-        self.num_classes = 80
+        self.num_classes = 4
         # factor of model depth
         self.depth = 1.00
         # factor of model width
@@ -98,7 +95,7 @@ class Exp(BaseExp):
         self.eval_interval = 10
         # save history checkpoint or not.
         # If set to False, yolox will only save latest and best ckpt.
-        self.save_history_ckpt = True
+        self.save_history_ckpt = False
         # name of experiment
         self.exp_name = os.path.split(os.path.realpath(__file__))[1].split(".")[0]
 
@@ -107,35 +104,16 @@ class Exp(BaseExp):
         self.test_size = (640, 640)
         # confidence threshold during evaluation/test,
         # boxes whose scores are less than test_conf will be filtered
-        self.test_conf = 0.01
+        self.test_conf = 0.001
         # nms threshold
         self.nmsthre = 0.65
 
     def get_model(self):
-        from yolox.models import YOLOX, YOLOXHead, YOLOPAFPN,YOLOPAFPN_BFP2,YOLOPAFPN_AUGFPN,YOLOFPNASFF,YOLOPAFPN_CBAM,YOLOPAFPN_SWTRS,YOLOPAFPN_TRS
-        from yolox.models import YOLOXHead_Dy
-        from yolox.models.yolo_pafpn_mhsa import YOLOPAFPN_MHSA
-        from yolox.models.yolo_pafpn_lz import YOLOPAFPN_LZ
-        from yolox.models.four_detect.yolo_head2 import YOLOXHead2
-        from yolox.models.yolo_head3 import YOLOXHead3
+        from yolox.models import YOLOX, YOLOXHead, YOLOPAFPN
         from yolox.models.four_detect.yolo_pafpn2 import YOLOPAFPN2
-        from yolox.models.yolo_pafpn_convnext import YOLOPAFPN_CONVNEXT
-        from yolox.models.yolo_pafpn_dcn import YOLOPAFPN_DCN
-        from yolox.models.yolo_head_dcn import YOLOXHead_DCN
-        from yolox.models.yolo_pafpn_van import YOLOPAFPN_VAN
-        from yolox.models.yolo_pafpn_dwconv import YOLOPAFPN_DWCONV
-        from yolox.models.yolo_pafpn_ACmix import YOLOPAFPN_ACMIX
-        from yolox.models.yolo_2_nofpn14 import YOLO2NOFPN14
-        from yolox.models.yolo_head2_snip2 import YOLOXHead2SNIP2
-        from yolox.models.yolo_head2_count import YOLOXHead2COUNT
-        from yolox.models.yolo_nofpn21 import YOLONOFPN21
-        from yolox.models.yolo_nofpn_FAM2 import YOLONOFPN_FAM2
-        from yolox.models.yolo_head_likefocs import YOLOXHead_likefocs
-        from yolox.models.lzhead.yolo_head_lzhead4 import YOLOXHead_LZHEAD4
-        from yolox.models.cascade_head.yolo_head_cascade4_3H import YOLOXHead_CASCADE4_3H
-        from yolox.models.nofpn2.yolo_nofpn6 import YOLONOFPN6
-        from yolox.models.cspdeeper.yolo_pafpn_deep import YOLOPAFPN_DEEP
-        from yolox.models.cascade_head.yolo_head_cascade6 import YOLOXHead_CASCADE6
+        from yolox.models.cascade_head.yolo_head_cascade43DGN_ATT import YOLOXHead_CASCADE43DGN_ATT
+        from yolox.models.cascade_head.yolo_head2_cascade43DGN_ATT import YOLOXHead2_CASCADE43DGN_ATT
+        from yolox.models.cascade_head.yolo_head_cascade43_DCNGN import YOLOXHead_CASCADE43DGN
         def init_yolo(M):
             for m in M.modules():
                 if isinstance(m, nn.BatchNorm2d):
@@ -144,10 +122,10 @@ class Exp(BaseExp):
 
         if getattr(self, "model", None) is None:
             #in_channels = [256, 512, 1024]
-            in_channels = [256, 512, 1024]
+            in_channels = [128, 256, 512, 1024]
             
-            backbone = YOLOPAFPN(self.depth, self.width, in_channels=in_channels, act=self.act)
-            head = YOLOXHead_CASCADE6(self.num_classes, self.width, in_channels=in_channels, act=self.act)
+            backbone = YOLOPAFPN2(self.depth, self.width, in_channels=in_channels, act=self.act)
+            head = YOLOXHead2_CASCADE43DGN_ATT(self.num_classes, self.width, in_channels=in_channels, act=self.act)
             self.model = YOLOX(backbone, head)
 
         self.model.apply(init_yolo)

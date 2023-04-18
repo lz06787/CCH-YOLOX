@@ -44,20 +44,6 @@ class IOUloss(nn.Module):
             area_c = torch.prod(c_br - c_tl, 1)
             giou = iou - (area_c - area_u) / area_c.clamp(1e-16)
             loss = 1 - giou.clamp(min=-1.0, max=1.0)
-        
-        elif self.loss_type == "diou":
-            c_tl = torch.min(
-                (pred[:, :2] - pred[:, 2:] / 2), (target[:, :2] - target[:, 2:] / 2)  # 包围框的左上点
-            )
-            c_br = torch.max(
-                (pred[:, :2] + pred[:, 2:] / 2), (target[:, :2] + target[:, 2:] / 2)  # 包围框的右下点
-            )
-            convex_dis = torch.pow(c_br[:, 0]-c_tl[:, 0], 2) + torch.pow(c_br[:, 1]-c_tl[:, 1], 2) + 1e-7 # convex diagonal squared
-
-            center_dis = (torch.pow(pred[:, 0]-target[:, 0], 2) + torch.pow(pred[:, 1]-target[:,1], 2))  # center diagonal squared
-
-            diou = iou - (center_dis / convex_dis)
-            loss = 1 - diou.clamp(min=-1.0, max=1.0)
 
         if self.reduction == "mean":
             loss = loss.mean()

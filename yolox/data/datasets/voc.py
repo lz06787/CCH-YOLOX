@@ -73,7 +73,7 @@ class AnnotationTransform(object):
             pts = ["xmin", "ymin", "xmax", "ymax"]
             bndbox = []
             for i, pt in enumerate(pts):
-                cur_pt = int(bbox.find(pt).text) - 1
+                cur_pt = int(float(bbox.find(pt).text)) - 1
                 # scale height or width
                 # cur_pt = cur_pt / width if i % 2 == 0 else cur_pt / height
                 bndbox.append(cur_pt)
@@ -287,10 +287,12 @@ class VOCDetection(Dataset):
             mAPs.append(mAP)
 
         print("--------------------------------------------------------------")
-        print("map_5095:", np.mean(mAPs))
+        #print("map_5095:", np.mean(mAPs))
+        print("map_70:", mAPs[4])
         print("map_50:", mAPs[0])
         print("--------------------------------------------------------------")
-        return np.mean(mAPs), mAPs[0]
+        #return np.mean(mAPs), mAPs[0]
+        return mAPs[4], mAPs[0]
 
     def _get_voc_results_file_template(self):
         filename = "comp4_det_test" + "_{:s}.txt"
@@ -338,7 +340,7 @@ class VOCDetection(Dataset):
             os.makedirs(cachedir)
         aps = []
         # The PASCAL VOC metric changed in 2010
-        use_07_metric = True if int(self._year) < 2010 else False
+        use_07_metric = False if int(self._year) < 2010 else False
         print("Eval IoU : {:.2f}".format(iou))
         if output_dir is not None and not os.path.isdir(output_dir):
             os.mkdir(output_dir)

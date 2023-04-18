@@ -28,7 +28,6 @@ class VOCEvaluator:
         confthre,
         nmsthre,
         num_classes,
-        WBF = False
     ):
         """
         Args:
@@ -45,7 +44,6 @@ class VOCEvaluator:
         self.nmsthre = nmsthre
         self.num_classes = num_classes
         self.num_images = len(dataloader.dataset)
-        self.WBF = WBF
 
     def evaluate(
         self,
@@ -113,18 +111,13 @@ class VOCEvaluator:
                     inference_time += infer_end - start
 
                 outputs = postprocess(
-                    outputs, self.num_classes, self.confthre, self.nmsthre, img_size=self.img_size[0], WBF=self.WBF
+                    outputs, self.num_classes, self.confthre, self.nmsthre
                 )
                 if is_time_record:
                     nms_end = time_synchronized()
                     nms_time += nms_end - infer_end
-            
-            if self.WBF:
-                #print("USE WBF")
-                data_list.update(self.convert_to_voc_format_WBF(outputs, info_imgs, ids))
-            else:
-                #print("USE NMS")
-                data_list.update(self.convert_to_voc_format(outputs, info_imgs, ids))
+
+            data_list.update(self.convert_to_voc_format(outputs, info_imgs, ids))
 
         statistics = torch.cuda.FloatTensor([inference_time, nms_time, n_samples])
         if distributed:
@@ -137,30 +130,6 @@ class VOCEvaluator:
         return eval_results
 
     def convert_to_voc_format(self, outputs, info_imgs, ids):
-            predictions = {}
-            for (output, img_h, img_w, img_id) in zip(
-                outputs, info_imgs[0], info_imgs[1], ids
-            ):
-                if output is None:
-                    predictions[int(img_id)] = (None, None, None)
-                    continue
-                output = output.cpu()
-
-                bboxes = output[:, 0:4]
-
-                # preprocessing: resize
-                scale = min(
-                    self.img_size[0] / float(img_h), self.img_size[1] / float(img_w)
-                )
-                bboxes /= scale
-
-                cls = output[:, 6]
-                scores = output[:, 4] * output[:, 5]
-
-                predictions[int(img_id)] = (bboxes, cls, scores)
-            return predictions
-
-    def convert_to_voc_format_WBF(self, outputs, info_imgs, ids):
         predictions = {}
         for (output, img_h, img_w, img_id) in zip(
             outputs, info_imgs[0], info_imgs[1], ids
@@ -178,10 +147,8 @@ class VOCEvaluator:
             )
             bboxes /= scale
 
-            #cls = output[:, 6]
-            #scores = output[:, 4] * output[:, 5]
-            cls = output[:, 5]
-            scores = output[:, 4]
+            cls = output[:, 6]
+            scores = output[:, 4] * output[:, 5]
 
             predictions[int(img_id)] = (bboxes, cls, scores)
         return predictions

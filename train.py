@@ -44,11 +44,11 @@ def make_parser():
     parser.add_argument(
         "--resume", default=False, action="store_true", help="resume training"
     )
-    parser.add_argument("-c", "--ckpt", default="../pretrain_weights/yolox_s.pth", type=str, help="checkpoint file")
+    parser.add_argument("-c", "--ckpt", default="../pretrain_weights/yolox_l.pth", type=str, help="checkpoint file")
     parser.add_argument(
         "-e",
         "--start_epoch",
-        default=5,
+        default=19,
         type=int,
         help="resume training start epoch",
     )
@@ -61,7 +61,7 @@ def make_parser():
     parser.add_argument(
         "--fp16",
         dest="fp16",
-        default=True,
+        default=True, 
         action="store_true",
         help="Adopting mix precision training.",
     )
@@ -76,7 +76,7 @@ def make_parser():
         "-o",
         "--occupy",
         dest="occupy",
-        default=False,
+        default=True,
         action="store_true",
         help="occupy GPU memory first for training.",
     )

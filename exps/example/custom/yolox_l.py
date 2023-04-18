@@ -9,12 +9,12 @@ from yolox.exp import Exp as MyExp
 class Exp(MyExp):
     def __init__(self):
         super(Exp, self).__init__()
-        self.num_classes = 4
-        self.depth = 0.33
-        self.width = 0.5
+        self.num_classes = 5
+        self.depth = 1
+        self.width = 1
         self.warmup_epochs = 5
-        self.max_epoch = 150
-        self.exp_name = 'yolox_l_baseline_cocofull'
+        self.max_epoch = 100
+        self.exp_name = 'yolox_2_l_cascade43DGN_VIG(DGN)_BN_DroneVehicle_nowhite_xin'
 
         self.eval_interval = 3
 
@@ -28,8 +28,8 @@ class Exp(MyExp):
         self.multiscale_range = 5
         # You can uncomment this line to specify a multiscale range
         # self.random_size = (14, 26)
-        self.data_dir = '../datasets/coco'
-        self.train_ann = "instances_test.json"
+        self.data_dir = '../datasets/DroneVehicle_nowhite'
+        self.train_ann = "instances_train.json"
         self.val_ann = "instances_test.json"
         self.test_ann = "instances_test.json"
         # ---------- transform config ------------ #
@@ -39,6 +39,6 @@ class Exp(MyExp):
         self.flip_prob = 0.5
 
         # --------------  training config --------------------- #
-        self.no_aug_epochs = 150
+        self.no_aug_epochs = 50
         # -----------------  testing config ------------------ #
         self.test_size = (640, 640)

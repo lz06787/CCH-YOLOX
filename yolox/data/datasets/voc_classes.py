@@ -25,4 +25,5 @@
 #     "train",
 #     "tvmonitor",
 # )
-VOC_CLASSES=("car","van","truck","bus")
+#VOC_CLASSES=("car","van","truck","bus")
+VOC_CLASSES=("car","bus","van","others")
